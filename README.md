@@ -182,6 +182,14 @@ iPhoneの画面をロックすると描画が2fps程度まで落ちる問題の�
 - `package_id` は**小文字英数のみ・ハイフン不可・逆ドメイン**（例 `com.necobit.necosanpo`）。
 - 上記の通り **`version` を上げないとキャッシュで更新されない**。
 
+## ストア公開まわり（ねこさんぽ公開作業で確認）
+
+- **アプリの同一性は `package_id`**。表示名（app.jsonの`name`）はビルド毎に自由に変えられる。package_idを変えると別アプリ扱い（いいね・既存ユーザーがリセット）なので変えないこと。
+- **アイコン**: 24×24 px モノクロPNG（公式デザインガイドライン、Figma公開ファイルに記載）。単色＋透過で作る。512pxなどの大きいアイコン枠は無い。
+- **ストアのスクリーンショット**: **576×288 px の透過PNG**（＝ディスプレイのフレームバッファそのもの）。背景の部屋写真はポータルが合成する（Environment: Home/Office/Store/Cafe、Interior/Exterior切替）。**黒背景で上げると背景を覆ってしまうので透過必須**。「光っていない部分＝透明、輝度＝緑のアルファ」にすると実機（加算表示）に忠実。even-g2-cat の `/promo.html` に生成機能あり（`?shot=N`でヘッドレス出力も可）。カバー画像枠は別途あり（サイズ自由っぽい）。
+- **ストア掲載フォーム**: Category / 説明 / タグ（英語で cat, pet, kawaii等）/ Permissionsチェックリスト（Mic/Location/Push/Local network/Bluetooth/Background services — プラグインが自分で使うものだけ。グラスとのBLEはホストの仕事なのでBluetoothは不要）/ Privacy and terms（自由記述）。Changelogはビルド毎に500字。
+- **PCシミュレータ**: 公式には無し（SDKはEven App WebView必須）。コミュニティ製の [BxNxM/even-dev](https://github.com/BxNxM/even-dev)（Even Hub Simulator）が存在する（未検証）。
+
 ## 参考リンク
 
 - [Even Hub 公式ドキュメント](https://hub.evenrealities.com/docs)
