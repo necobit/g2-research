@@ -178,6 +178,15 @@ iPhoneの画面をロックすると描画が2fps程度まで落ちる問題の�
 - **実用解**: 固定コンテナの中でキャラを動かす。PNG時代（〜0.0.11）は帯域が足りずキャラサイズの小窓＋その場アニメが限界だったが、**0.0.12の生gray4なら幅上限いっぱいの144px固定窓で7fps以上出る**ので、窓の中を実際に歩き回らせられる（ねこさんぽ実機確認）。窓は動かさないのでグリッチ皆無。地面ライン等の静的な目印を窓内に描くと相対移動が見やすい。
 - ターンの“つぶし”表現で**頭まで横につぶすと嘘くさい**。頭は同サイズのまま胴だけつぶすと自然。
 
+## 終了ダイアログとホストのバグ（実機確認・最小再現あり 2026-07-21）
+
+`~/Documents/GitHub/g2-exit-test`（テキストカウンタ＋64×32画像を定期更新するだけの最小アプリ）で確定させた挙動：
+
+- **`shutDownPageContainer(1)` はダイアログが「開いた」時点で resolve する**（+114〜228ms）。はい/いいえの結果は返ってこない（どちらでもtrue相当）。
+- ダイアログ前後の sysEvent: **`type=4`＝ダイアログが開いた / `type=5`＝閉じた**（SDKのenum名は FOREGROUND_ENTER/EXIT だがアプリの前面/背面ではない点に注意）。**「はい」で終了が確定すると `type=7` + `systemExitReasonCode=1`** が届き、その後ホストがWebViewを破棄する。終了検知はこの type=7 を見るのが正解。
+- **【ホストのバグ】`shutDownPageContainer(1)` を呼んだ瞬間から `updateImageRawData` が永久に `sendFailed` になる**。「いいえ」でキャンセルしても復活しない。`rebuildPageContainer`（true が返るが効かない）、`createStartUpPageContainer`（code=1）、**WebViewの `location.reload()` でも復活しない**（ゾンビページ化：reload後のcreateはcode=1）。一方 **`textContainerUpgrade` は無傷**で動き続ける。テキスト型アプリは何も起きないように見えるため、画像ストリーミング型だけが踏む。→ shawn.deng@evenrealities.com に報告する案件。
+- ダブルタップの終了ダイアログは**アプリが `shutDownPageContainer(1)` を呼んで出すもの**（呼ばなければ何も起きない）。グラス側の**長押し**でOS自身の終了ダイアログも出るが、こちらのキャンセルでも同じ画像チャネル死亡が起きる。
+
 ## 入力イベント（実機確認）
 
 - `onEvenHubEvent` で tap / double-tap / scroll / IMU / audio などが届く。
