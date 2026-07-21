@@ -198,7 +198,8 @@ iPhoneの画面をロックすると描画が2fps程度まで落ちる問題の�
 - **アイコン**: 24×24 px モノクロPNG（公式デザインガイドライン、Figma公開ファイルに記載）。単色＋透過で作る。512pxなどの大きいアイコン枠は無い。
 - **ストアのスクリーンショット**: **576×288 px の透過PNG**（＝ディスプレイのフレームバッファそのもの）。背景の部屋写真はポータルが合成する（Environment: Home/Office/Store/Cafe、Interior/Exterior切替）。**黒背景で上げると背景を覆ってしまうので透過必須**。「光っていない部分＝透明、輝度＝緑のアルファ」にすると実機（加算表示）に忠実。even-g2-cat の `/promo.html` に生成機能あり（`?shot=N`でヘッドレス出力も可）。カバー画像枠は別途あり（サイズ自由っぽい）。
 - **ストア掲載フォーム**: Category / 説明 / タグ（英語で cat, pet, kawaii等）/ Permissionsチェックリスト（Mic/Location/Push/Local network/Bluetooth/Background services — プラグインが自分で使うものだけ。グラスとのBLEはホストの仕事なのでBluetoothは不要）/ Privacy and terms（自由記述）。Changelogはビルド毎に500字。
-- **PCシミュレータ**: 公式には無し（SDKはEven App WebView必須）。コミュニティ製の [BxNxM/even-dev](https://github.com/BxNxM/even-dev)（Even Hub Simulator）が存在する（未検証）。
+- **審査は静的スキャン＋実機レビュー**（ステータスはDraft→Test→Submitted→Releasedの一方向、差し戻しのみDraftに戻る。結果メールは合否を書かず、レビュアーノートはポータルのinboxに届く）。**実例（2026-07-21差し戻し）**: `bridge.shutDownPageContainer?.(1)` とoptional chainingで書くと、バンドル内が `?.(1)` 形になり**スキャンが「呼び出し無し」と判定して差し戻される**。審査対象のAPI呼び出しは `if (typeof fn === 'function') bridge.shutDownPageContainer(1)` のような**素直な呼び出し形**で書き、文字列がバンドルに残るようにすること。公式の却下理由リスト: 「Even」を含む名前 / 未使用のpermission宣言 / アイコン視認性・カラー使用（グレースケールのみ）/ 実機描画と一致しないスクショ / permissionごとのプライバシーポリシー記載漏れ / CORS設定ミス。ロック中動作（2分放置後も応答、グラス＋リングのみで操作可能）も審査項目。
+- **PCシミュレータ**: 公式docsに `/docs/test/simulator` ページが登場（2026-07-21確認、中身未検証）。コミュニティ製は [BxNxM/even-dev](https://github.com/BxNxM/even-dev)（Even Hub Simulator、未検証）。
 
 ## 参考リンク
 
