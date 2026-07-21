@@ -184,7 +184,7 @@ iPhoneの画面をロックすると描画が2fps程度まで落ちる問題の�
 
 - **`shutDownPageContainer(1)` はダイアログが「開いた」時点で resolve する**（+114〜228ms）。はい/いいえの結果は返ってこない（どちらでもtrue相当）。
 - ダイアログ前後の sysEvent: **`type=4`＝ダイアログが開いた / `type=5`＝閉じた**（SDKのenum名は FOREGROUND_ENTER/EXIT だがアプリの前面/背面ではない点に注意）。**「はい」で終了が確定すると `type=7` + `systemExitReasonCode=1`** が届き、その後ホストがWebViewを破棄する。終了検知はこの type=7 を見るのが正解。
-- **【ホストのバグ】`shutDownPageContainer(1)` を呼んだ瞬間から `updateImageRawData` が永久に `sendFailed` になる**。「いいえ」でキャンセルしても復活しない。`rebuildPageContainer`（true が返るが効かない）、`createStartUpPageContainer`（code=1）、**WebViewの `location.reload()` でも復活しない**（ゾンビページ化：reload後のcreateはcode=1）。一方 **`textContainerUpgrade` は無傷**で動き続ける。テキスト型アプリは何も起きないように見えるため、画像ストリーミング型だけが踏む。→ shawn.deng@evenrealities.com に報告する案件。
+- **【ホストのバグ】`shutDownPageContainer(1)` を呼んだ瞬間から `updateImageRawData` が永久に `sendFailed` になる**。「いいえ」でキャンセルしても復活しない。`rebuildPageContainer`（true が返るが効かない）、`createStartUpPageContainer`（code=1）、**WebViewの `location.reload()` でも復活しない**（ゾンビページ化：reload後のcreateはcode=1）。一方 **`textContainerUpgrade` は無傷**で動き続ける。テキスト型アプリは何も起きないように見えるため、画像ストリーミング型だけが踏む。→ 報告済み: [everything-evenhub#18](https://github.com/even-realities/everything-evenhub/issues/18)（最小再現: [g2-exit-test](https://github.com/necobit/g2-exit-test)）。
 - ダブルタップの終了ダイアログは**アプリが `shutDownPageContainer(1)` を呼んで出すもの**（呼ばなければ何も起きない）。グラス側の**長押し**でOS自身の終了ダイアログも出るが、こちらのキャンセルでも同じ画像チャネル死亡が起きる。
 
 ## 入力イベント（実機確認）
