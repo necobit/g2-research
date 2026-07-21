@@ -1,6 +1,6 @@
 # Even Realities G2 調査まとめ
 
-調査日: 2026-06-19 / 最終更新: 2026-07-20（SDK 0.0.12対応・画面ロック対策の知見を追記）
+調査日: 2026-06-19 / 最終更新: 2026-07-21（STTはEvenクラウド処理と判明、オンデバイスSTT記述を訂正）
 
 ## ハードウェア仕様
 
@@ -54,7 +54,7 @@ Even Hubアプリの「カスタムエージェント」機能を使うと、**S
 
 ```
 「Hey Even、電気消して」
-  └→ G2オンデバイスSTT（テキスト化）
+  └→ 音声をBLEでスマホへ → EvenクラウドでSTT（テキスト化）
       └→ カスタムエンドポイントにOpenAI互換APIとしてPOST
           └→ 自作サーバーで処理
               └→ SwitchBot API 等を呼ぶ
@@ -77,11 +77,21 @@ Cloudflare Worker / FastAPI / LM Studio などで実装可能。
               └→ 電気が消える
 ```
 
-## 副産物: G2のオンデバイスSTT確認
+## STTはEvenクラウド処理（オンデバイスではない）
 
-カスタムエージェント連携のブログ記事により、
-「Hey Even」後に音声→テキスト変換がデバイス内で完結していることが確認できた。
-（SDKのuseSTTフック（外部STT利用）とは別の処理）
+**訂正（2026-07-21）**: 以前「音声→テキスト変換がデバイス内で完結」と記載していたが誤り。
+
+- 出典を追跡した結果、[OpenClawブリッジ記事](https://blog.juchunko.com/en/even-realities-g2-openclaw-bridge/)の「Voice → text happens on-device — G2 sends transcribed text, not audio」という記述が根拠だった。しかしこれは「カスタムエンドポイントに音声ではなくテキストが届く」という観測からの筆者の推測で、エンドポイント側からはグラス内STTかクラウドSTTかは区別できない。
+- **実機実験（2026-07-21）**: スマホのWi-Fiを切ると標準搭載の会話サポート（Conversate）が起動しなくなることを確認。
+- **公式ドキュメントで裏付け**: [Conversateサポート記事](https://support.evenrealities.com/hc/en-us/articles/14273795154319-Conversate)に「スマホ経由のインターネット接続が必要。オフラインでは利用不可」と明記。[公式ブログ](https://www.evenrealities.com/blogs/even-insider/context-without-compromise)でも文字起こしは「Evenのセキュアなクラウド」で処理し、音声は保存せずテキストのみスマホに残すと説明。
+
+### 結論
+
+- **オンデバイス（グラス内）なのは「Hey Even」のウェイクワード検出のみ**
+- STTの流れ: グラスで集音 → BLEでスマホ → **EvenクラウドでSTT** → テキスト化
+- したがってカスタムエージェント連携もSTT部分でネットワーク必須（エンドポイントへのPOSTも当然必要）
+- Even App自体やBLE完結の機能（ダッシュボード・テレプロンプター・プラグイン描画等）はオフラインでも動作する
+- SDKのuseSTTフック（外部STTプロバイダ利用）はこれとは別系統
 
 ---
 
