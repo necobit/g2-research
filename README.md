@@ -186,6 +186,8 @@ iPhoneの画面をロックすると描画が2fps程度まで落ちる問題の�
 - ダイアログ前後の sysEvent: **`type=4`＝ダイアログが開いた / `type=5`＝閉じた**（SDKのenum名は FOREGROUND_ENTER/EXIT だがアプリの前面/背面ではない点に注意）。**「はい」で終了が確定すると `type=7` + `systemExitReasonCode=1`** が届き、その後ホストがWebViewを破棄する。終了検知はこの type=7 を見るのが正解。
 - **【ホストのバグ】`shutDownPageContainer(1)` を呼んだ瞬間から `updateImageRawData` が永久に `sendFailed` になる**。「いいえ」でキャンセルしても復活しない。`rebuildPageContainer`（true が返るが効かない）、`createStartUpPageContainer`（code=1）、**WebViewの `location.reload()` でも復活しない**（ゾンビページ化：reload後のcreateはcode=1）。一方 **`textContainerUpgrade` は無傷**で動き続ける。テキスト型アプリは何も起きないように見えるため、画像ストリーミング型だけが踏む。→ 報告済み: [everything-evenhub#18](https://github.com/even-realities/everything-evenhub/issues/18)（最小再現: [g2-exit-test](https://github.com/necobit/g2-exit-test)）。
 - ダブルタップの終了ダイアログは**アプリが `shutDownPageContainer(1)` を呼んで出すもの**（呼ばなければ何も起きない）。グラス側の**長押し**でOS自身の終了ダイアログも出るが、こちらのキャンセルでも同じ画像チャネル死亡が起きる。
+- **切り分け済みの棄却仮説（2026-07-22）**: ①eventSource違反説 → 正規のsrc=1トリガーでも再現。②SDK 0.0.12リグレッション説 → **SDK 0.0.11（PNGパス）でも画像だけ死ぬ**（g2-exit-testの`sdk-0.0.11`ブランチで実機確認）。SDKバージョン・画像形式・トリガーソースに依存しない、ダイアログ×画像コンテナ全般のホストバグと確定。公開アプリで問題視されないのは、(a)「はい」での終了は正常、(b)画像利用アプリも静的画像ばかりでキャンセル後の凍結に気づかないため（毎フレーム画像更新アプリはねこさんぽがほぼ初）。
+- **Shawnのレビュアーガイダンス（2026-07-22メール）**: 終了確認のトリガーは `eventType=3 + eventSource=1`（右テンプル）。`eventSource=3`（左テンプル、同一ダブルタップの重複イベント）からの**繰り返し呼び出しは禁止**。ダイアログ表示中の再要求禁止。**本物のSYSTEM_EXIT_EVENT（type=7）より前にアニメ停止・Canvasクリア・コンテナ解放・終了処理をしてはいけない**。リング（src=2）は言及なし（実機ではsrc=2でも正常にダイアログが出る）。
 
 ## 入力イベント（実機確認）
 
@@ -208,7 +210,11 @@ iPhoneの画面をロックすると描画が2fps程度まで落ちる問題の�
 - **ストアのスクリーンショット**: **576×288 px の透過PNG**（＝ディスプレイのフレームバッファそのもの）。背景の部屋写真はポータルが合成する（Environment: Home/Office/Store/Cafe、Interior/Exterior切替）。**黒背景で上げると背景を覆ってしまうので透過必須**。「光っていない部分＝透明、輝度＝緑のアルファ」にすると実機（加算表示）に忠実。even-g2-cat の `/promo.html` に生成機能あり（`?shot=N`でヘッドレス出力も可）。カバー画像枠は別途あり（サイズ自由っぽい）。
 - **ストア掲載フォーム**: Category / 説明 / タグ（英語で cat, pet, kawaii等）/ Permissionsチェックリスト（Mic/Location/Push/Local network/Bluetooth/Background services — プラグインが自分で使うものだけ。グラスとのBLEはホストの仕事なのでBluetoothは不要）/ Privacy and terms（自由記述）。Changelogはビルド毎に500字。
 - **審査は静的スキャン＋実機レビュー**（ステータスはDraft→Test→Submitted→Releasedの一方向、差し戻しのみDraftに戻る。結果メールは合否を書かず、レビュアーノートはポータルのinboxに届く）。**実例（2026-07-21差し戻し）**: `bridge.shutDownPageContainer?.(1)` とoptional chainingで書くと、バンドル内が `?.(1)` 形になり**スキャンが「呼び出し無し」と判定して差し戻される**。審査対象のAPI呼び出しは `if (typeof fn === 'function') bridge.shutDownPageContainer(1)` のような**素直な呼び出し形**で書き、文字列がバンドルに残るようにすること。公式の却下理由リスト: 「Even」を含む名前 / 未使用のpermission宣言 / アイコン視認性・カラー使用（グレースケールのみ）/ 実機描画と一致しないスクショ / permissionごとのプライバシーポリシー記載漏れ / CORS設定ミス。ロック中動作（2分放置後も応答、グラス＋リングのみで操作可能）も審査項目。
-- **PCシミュレータ**: 公式docsに `/docs/test/simulator` ページが登場（2026-07-21確認、中身未検証）。コミュニティ製は [BxNxM/even-dev](https://github.com/BxNxM/even-dev)（Even Hub Simulator、未検証）。
+- **PCシミュレータ（公式・実際に動作確認済み 2026-07-22）**: `npm install -g @evenrealities/evenhub-simulator`（0.8.0で検証）。`evenhub-simulator --automation-port 8899 "http://localhost:5173/"` でdevサーバーのアプリを直接ロード。ウィンドウにBrowser（WebView）とGlasses Displayが並ぶ。**自動化API**: `/api/ping`、`/api/screenshot/glasses`（RGBA PNG）、`/api/input`（POST、action: up/down/click/double_click）→ エージェントによる自動テストに使える。制約:
+  - **画像はPNGパスのみ**。0.0.12のraw gray4は「The image format could not be determined」で非対応（シミュレータ自体が0.0.11世代）。raw gray4アプリは `#png` のような旧形式フォールバックが必要。
+  - BLE制約なしなので描画は実機よりはるかに速い（fps検証には使えない）。
+  - **終了フローが未実装気味**: docsは「ダブルタップで終了ダイアログ表示」というが、0.8.0では**ダイアログが出ないまま**ページコンテナ破棄（Glasses空）＋WebViewフリーズになる。ダイアログキャンセルのバグ検証には使えない。
+  - コミュニティ製の [BxNxM/even-dev](https://github.com/BxNxM/even-dev) も存在（未検証）。
 
 ## 参考リンク
 
