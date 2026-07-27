@@ -1,6 +1,6 @@
 # Even Realities G2 調査まとめ
 
-調査日: 2026-06-19 / 最終更新: 2026-07-21（STTはEvenクラウド処理と判明、オンデバイスSTT記述を訂正）
+調査日: 2026-06-19 / 最終更新: 2026-07-27（ストア用スクショの正攻法＝シミュレータ実写キャプチャを追記）
 
 ## ハードウェア仕様
 
@@ -217,6 +217,22 @@ iPhoneの画面をロックすると描画が2fps程度まで落ちる問題の�
 - **ストアのスクリーンショット**: **576×288 px の透過PNG**（＝ディスプレイのフレームバッファそのもの）。背景の部屋写真はポータルが合成する（Environment: Home/Office/Store/Cafe、Interior/Exterior切替）。**黒背景で上げると背景を覆ってしまうので透過必須**。「光っていない部分＝透明、輝度＝緑のアルファ」にすると実機（加算表示）に忠実。even-g2-cat の `/promo.html` に生成機能あり（`?shot=N`でヘッドレス出力も可）。カバー画像枠は別途あり（サイズ自由っぽい）。
 - **ストア掲載フォーム**: Category / 説明 / タグ（英語で cat, pet, kawaii等）/ Permissionsチェックリスト（Mic/Location/Push/Local network/Bluetooth/Background services — プラグインが自分で使うものだけ。グラスとのBLEはホストの仕事なのでBluetoothは不要）/ Privacy and terms（自由記述）。Changelogはビルド毎に500字。
 - **審査は静的スキャン＋実機レビュー**（ステータスはDraft→Test→Submitted→Releasedの一方向、差し戻しのみDraftに戻る。結果メールは合否を書かず、レビュアーノートはポータルのinboxに届く）。**実例（2026-07-21差し戻し）**: `bridge.shutDownPageContainer?.(1)` とoptional chainingで書くと、バンドル内が `?.(1)` 形になり**スキャンが「呼び出し無し」と判定して差し戻される**。審査対象のAPI呼び出しは `if (typeof fn === 'function') bridge.shutDownPageContainer(1)` のような**素直な呼び出し形**で書き、文字列がバンドルに残るようにすること。公式の却下理由リスト: 「Even」を含む名前 / 未使用のpermission宣言 / アイコン視認性・カラー使用（グレースケールのみ）/ 実機描画と一致しないスクショ / permissionごとのプライバシーポリシー記載漏れ / CORS設定ミス。ロック中動作（2分放置後も応答、グラス＋リングのみで操作可能）も審査項目。
+### ストア用スクリーンショットの撮り方（シミュレータ実写・2026-07-27確定、Next Station差し戻し対応で確立）
+
+- **実例（2026-07-27差し戻し）**: Chromeで生成した緑テキスト画像（#57ff6e＋text-shadowグロー）を上げたら「Is this screenshot processed? The colors appear incorrect」で差し戻された。自前で色を作るのではなく**シミュレータの実写キャプチャを無加工で提出する**のが正解。
+- **公式シミュレータの `/api/screenshot/glasses` の出力が、ストア提出フォーマットそのもの**であることをピクセル解析で確認済み: 576×288 RGBA、背景 `(0,255,0,0)`＝完全透過、点灯画素は**純緑(0,255,0)で明るさはアルファのみ**（例: `(0,255,0,214)`）。加工・変換は一切不要で、そのままポータルに上げられる（ポータル側が部屋写真と合成する）。
+- 手順:
+  ```bash
+  npm run dev   # Vite起動
+  evenhub-simulator --automation-port 8899 "http://localhost:5173/"
+  curl -s -o shot.png http://localhost:8899/api/screenshot/glasses
+  # 状態を変える: curl -X POST http://localhost:8899/api/input -d '{"action":"click"}'
+  ```
+- **GPS等の実データが必要な画面**は、アプリに `?demo=` クエリで**リプレイモード**を仕込む（Next Stationでは `?demo=ride` が山手線の駅間を55km/h相当で往復、`?demo=idle` が原宿付近に静止）。fixを本物のパイプラインに流すので画面内容はアプリの実描画そのもの＝「加工」にあたらない。
+- スクショに**画面内バージョン表示が写る**ので、コードを変えたらバージョンを上げてから撮り直すこと（「実機描画と一致しないスクショ」却下対策）。
+- シミュレータのsysEventには**eventSourceが付いている**（eventSource必須のタップガードを入れていても操作可能）。ダブルタップ注入は既知の終了フローバグ（ダイアログなしでコンテナ破棄→Glasses空白）を踏むので、キャプチャ中は避ける。
+- 撮影スクリプト実例: `g2-next-station` リポジトリの履歴（v0.1.3）参照。
+
 - **PCシミュレータ（公式・実際に動作確認済み 2026-07-22）**: `npm install -g @evenrealities/evenhub-simulator`（0.8.0で検証）。`evenhub-simulator --automation-port 8899 "http://localhost:5173/"` でdevサーバーのアプリを直接ロード。ウィンドウにBrowser（WebView）とGlasses Displayが並ぶ。**自動化API**: `/api/ping`、`/api/screenshot/glasses`（RGBA PNG）、`/api/input`（POST、action: up/down/click/double_click）→ エージェントによる自動テストに使える。制約:
   - **画像はPNGパスのみ**。0.0.12のraw gray4は「The image format could not be determined」で非対応（シミュレータ自体が0.0.11世代）。raw gray4アプリは `#png` のような旧形式フォールバックが必要。
   - BLE制約なしなので描画は実機よりはるかに速い（fps検証には使えない）。
