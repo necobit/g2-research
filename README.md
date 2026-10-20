@@ -1,6 +1,6 @@
 # Even Realities G2 調査まとめ
 
-調査日: 2026-06-19 / 最終更新: 2026-07-27（ストア用スクショの正攻法＝シミュレータ実写キャプチャを追記）
+調査日: 2026-06-19 / 最終更新: 2026-10-20（位置情報APIのSDK 0.0.11での変化とロック中の挙動を追記）
 
 ## ハードウェア仕様
 
@@ -154,6 +154,7 @@ Cloudflare Worker / FastAPI / LM Studio などで実装可能。
 - **0.0.12の生gray4形式で同面積のfpsが約5倍**になった（144×58で1.4→7-9fps、ブリッジ往復は約110-200ms/フレーム）。PNGエンコード/デコードが消えたぶんと思われる。
 - 送信間隔(`setInterval`)を大きくすると**そこで頭打ち**になる。タイマー駆動よりも**送信のawait自体をペースメーカーにする自走ループ**が最速（後述のロック対策も兼ねる）。
 - **静止中（同じ絵）は送らない**でBLEを節約（直前フレームのシグネチャ比較でスキップ）。
+- **【未検証】SDK 0.0.14〜で `updateImageRawData` の挙動が変わった**: 公式Changelogによれば「画像パスを100ms保留し、保留中の呼び出しは次の呼び出しでflushする」。上表の 0.0.12 計測値（110-200ms/フレームの自走ループ）がそのまま再現するかは未確認。0.0.14以上に上げたら fps を測り直すこと。
 
 ## スマホ画面ロック対策（実機確認・重要）
 
@@ -185,10 +186,10 @@ iPhoneの画面をロックすると描画が2fps程度まで落ちる問題の�
 - **`shutDownPageContainer(1)` はダイアログが「開いた」時点で resolve する**（+114〜228ms）。はい/いいえの結果は返ってこない（どちらでもtrue相当）。
 - ダイアログ前後の sysEvent: **`type=4`＝ダイアログが開いた / `type=5`＝閉じた**（SDKのenum名は FOREGROUND_ENTER/EXIT だがアプリの前面/背面ではない点に注意）。**「はい」で終了が確定すると `type=7` + `systemExitReasonCode=1`** が届き、その後ホストがWebViewを破棄する。終了検知はこの type=7 を見るのが正解。
 - **【ホストのバグ】`shutDownPageContainer(1)` を呼んだ瞬間から `updateImageRawData` が永久に `sendFailed` になる**。「いいえ」でキャンセルしても復活しない。`rebuildPageContainer`（true が返るが効かない）、`createStartUpPageContainer`（code=1）、**WebViewの `location.reload()` でも復活しない**（ゾンビページ化：reload後のcreateはcode=1）。一方 **`textContainerUpgrade` は無傷**で動き続ける。テキスト型アプリは何も起きないように見えるため、画像ストリーミング型だけが踏む。→ 報告済み: [everything-evenhub#18](https://github.com/even-realities/everything-evenhub/issues/18)（最小再現: [g2-exit-test](https://github.com/necobit/g2-exit-test)）。
-- ダブルタップの終了ダイアログは**アプリが `shutDownPageContainer(1)` を呼んで出すもの**（呼ばなければ何も起きない）。グラス側の**長押し**でOS自身の終了ダイアログも出るが、こちらのキャンセルでも同じ画像チャネル死亡が起きる。
+- ダブルタップの終了ダイアログは**アプリが `shutDownPageContainer(1)` を呼んで出すもの**（呼ばなければ何も起きない）。グラス側の**長押し**でOS自身の終了ダイアログも出るが、こちらのキャンセルでも同じ画像チャネル死亡が起きる（※SDK 0.0.14〜は長押しが `LONG_PRESS_EVENT` としてアプリに届くようになったため、新しいApp/ファームで長押しがまだOS終了ダイアログを出すかは未検証）。
 - **切り分け済みの棄却仮説（2026-07-22）**: ①eventSource違反説 → 正規のsrc=1トリガーでも再現。②SDK 0.0.12リグレッション説 → **SDK 0.0.11（PNGパス）でも画像だけ死ぬ**（g2-exit-testの`sdk-0.0.11`ブランチで実機確認）。SDKバージョン・画像形式・トリガーソースに依存しない、ダイアログ×画像コンテナ全般のホストバグと確定。公開アプリで問題視されないのは、(a)「はい」での終了は正常、(b)画像利用アプリも静的画像ばかりでキャンセル後の凍結に気づかないため（毎フレーム画像更新アプリはねこさんぽがほぼ初）。
 - **経過（2026-08、Discord観測）**: ①コミュニティでの典型的誤診パターン＝「FOREGROUND_EXITでアプリ側がteardownしているのでは」説（Navigazeオーナーの回答が典型。イベント順序を実測と逆＝enum名どおりに説明しており、実機計測なしの推定と思われる）。この説は最小再現（ライフサイクルで何もしない）と `location.reload()` 後も復活しない事実で棄却済み。②その後のDiscord報告によれば、**EvenのR&Dチームがデモビルドで内部再現・バグ確認済み。修正はファームウェア 2.2.9 または 2.2.10 で提供見込み**（伝聞情報。issue #18 上でのEven公式コメントはまだ無い）。修正後も旧ファームのユーザーは踏み続けるため、当面はアプリ内終了確認＋`shutDownPageContainer(0)` 回避策（サイドロード/Beta限定）の価値は残る。
-- **【解決】（2026-09-17確認）**: **最新ファームウェアで修正済み**。終了ダイアログをキャンセルしても画像チャネル（`updateImageRawData`）が死ななくなった——上記R&D経路で予告されていた修正が実際に出た形。旧ファームのユーザーは引き続き踏むため、画像ストリーミング型アプリで旧ファームを切り捨てられない場合に限り回避策の価値が残る。
+- **【解決】（2026-09-17確認）**: **最新ファームウェアで修正済み**（修正が入ったファーム/Even Appのバージョン番号は未記録。上の「2.2.9/2.2.10」は伝聞で、SDKの `minAppVersion` 2.2.9/2.2.10 は**Even App**の番号なのでファーム番号と混同している可能性あり。グラス情報画面で実番号を確認して追記すること）。終了ダイアログをキャンセルしても画像チャネル（`updateImageRawData`）が死ななくなった——上記R&D経路で予告されていた修正が実際に出た形。旧ファームのユーザーは引き続き踏むため、画像ストリーミング型アプリで旧ファームを切り捨てられない場合に限り回避策の価値が残る。
 - **Shawnのレビュアーガイダンス（2026-07-22メール）**: 終了確認のトリガーは `eventType=3 + eventSource=1`（右テンプル）。`eventSource=3`（左テンプル、同一ダブルタップの重複イベント）からの**繰り返し呼び出しは禁止**。ダイアログ表示中の再要求禁止。**本物のSYSTEM_EXIT_EVENT（type=7）より前にアニメ停止・Canvasクリア・コンテナ解放・終了処理をしてはいけない**。リング（src=2）は言及なし（実機ではsrc=2でも正常にダイアログが出る）。
 
 ## コンテナジオメトリと設定永続化（実機確認 2026-07-24）
@@ -205,10 +206,50 @@ iPhoneの画面をロックすると描画が2fps程度まで落ちる問題の�
 - **誤発火対策**: IMU等の雑多な `sysEvent` も流れてくる。`eventType` が `undefined→0=CLICK` になるため全部タップ扱いすると暴発する。**本物のタップは `eventSource`（GLASSES_L/R=1/3, RING=2）が付いているものだけ**採用すると安定。
 - ルート画面の**ダブルタップ → `shutDownPageContainer(1)`** は審査必須。
 
+## SDK 0.0.13〜0.0.16 の変更点（npmパッケージ差分＋公式Changelog、2026-10-18調査・実機未検証）
+
+| 版 | 公開日 | 必要Even App | 主な変更 |
+|----|--------|-------------|---------|
+| 0.0.13 | 2026-07-31 | 2.2.6〜 | npmメタデータに `minAppVersion` を記載開始（API変更なし） |
+| 0.0.14 | 2026-08-20 | **2.2.9〜** | コンテキストメニュー / 長押しイベント / テキスト輝度 / 音声の方向・話者 / `updateImageRawData` の100ms保留 |
+| 0.0.15 | 2026-09-07 | **2.2.10〜** | 長押しの `sysEvent` に `eventSource`（右テンプル/リング/左テンプル）が残るように |
+| 0.0.16 | 2026-09-24 | 2.2.10〜 | `setTimeout`/`setInterval` コールバックの重複実行を修正 |
+
+- **コンテキストメニュー**: `createStartUpPageContainer` / `rebuildPageContainer` に `menuObject: { menuItems: [{ itemName, itemID }] }`。項目は**最大10**、`itemID` は非0・一意のuint32、`itemName` は**UTF-8で32バイトまで**（日本語は約10文字）。違反はSDKがネイティブ呼び出し前に弾く（`TOO_MANY_MENU_ITEMS` 等）。選択されると `event.menuItemClickEvent.itemID` が届く。**rebuildで `menuObject` を省略すると独自メニューが消える**（毎回渡し直す）。古いAppではメニューが黙って出ないので、CLI 0.1.14 が `min_app_version` を2.2.9以上に引き上げる。
+- **長押し**: `OsEventTypeList.LONG_PRESS_EVENT=9`（押し始め）/ `LONG_PRESS_RELEASE_EVENT=10`（離し）。0.0.15以降は `sysEvent` で届き `eventSource` 付き。上記「本物のタップは eventSource 付きだけ採用」ガードと同じ扱いでよい。
+- **テキスト輝度 `textColor`**: 0〜4の整数。create/rebuildで省略＝デフォルト4、`textContainerUpgrade` で省略＝現状維持。範囲外はSDKが拒否（`INVALID_TEXT_BRIGHTNESS`）。
+- **音声**: `audioEvent` に `direction`（グラスの方向タグ、符号付きint16の生値、単位不明）と `speakerRole`（`self`/`other`/`unknown`、**App側アルゴリズムの推定**でファームの断定ではない）。スマホマイクや旧ホストでは `null` / `unknown`。→ビームフォーミングがグラス側にある傍証になりうる（上の「オーディオ処理アーキテクチャ」は未確定のまま）。
+- **SDKはwindowのタイマーを差し替えている**（静的解析）: SDKは読み込み時に `window.setTimeout`/`setInterval`/`clear*` をラップし、ホストが経過msを渡して呼ぶtick関数でコールバックを発火させる「シャドウタイマー」を持つ（0.0.12時点で既に存在、0.0.16はその重複発火バグの修正）。画面ロック中のタイマー間引き（上記ロック対策の節）を回避する意図と推測されるが未確認。ロック中のタイマー挙動はSDK版によって変わりうるので、自走ループ方式の前提を変える場合は実機で測ること。
+
+## 位置情報：SDK 0.0.11 で取り方が変わった（Next Station / Pacemaker で確認）
+
+- **〜0.0.10**: SDKに位置情報APIは無く、WebView標準の **`navigator.geolocation`** を使うしかなかった。Next Stationのコードコメントによれば、**QRサイドロード（プロトタイプモード）では許可が拒否され**、Hubからのインストール版でのみ動く。
+- **0.0.11〜（2026-06-22）**: **ホスト（Even Appネイティブ）の位置情報API**が追加された。位置はEven App本体が取得し、ブリッジ経由でWebViewに届く。
+  ```typescript
+  bridge.onAppLocationChanged((loc) => { /* loc: AppLocation */ });
+  const ok = await bridge.startAppLocationUpdates({
+    accuracy: AppLocationAccuracy.High, // low / medium / high
+    intervalMs: 1000,
+    distanceFilter: 0,
+  });
+  // 単発取得: bridge.getAppLocation(opts) / 停止: bridge.stopAppLocationUpdates()
+  ```
+  - `AppLocation` は `latitude` / `longitude` / `accuracy` / `altitude` / `speed`(m/s) / `heading` / `timestamp`。`navigator.geolocation` の `coords.*` とは形が違うので、両方を受けるなら変換関数を一つ用意する。
+  - iOSは速度・方位が無効なとき **`-1`** を返す（Web APIでは `NaN`/`null`）。`>= 0` かつ有限のものだけ採用する。
+- **ロック中も届く（実機確認 2026-10-20）**: Pacemaker v0.1.1（SDK 0.0.16）でスマホをロックしたまま歩き、速度が取れ続けることを確認した。
+  - 一方で、`navigator.geolocation` の方式でロック中に止まるかは**未検証**。他の開発者から「ロック中の位置情報はあきらめ、Overland（iOSの位置記録アプリ）から自前サーバー経由で取っている」という声があった（2026-10、SNS）。旧方式を使っていたことが原因と推測しているが、確認はしていない。
+- **実装上の注意**:
+  - **`distanceFilter: 0` にする**。距離フィルタがあると立ち止まった瞬間に位置が届かなくなり、画面が固まって見える（速度が0に落ちない、停車を検出できない）。
+  - **途絶の監視を入れる**。iOSは静止中の位置セッションを一時停止して、そのまま戻さないことがあるとみられる（Next Station v0.2.15。ロック中に画面が固まり再起動まで戻らない症状からの推定）。20秒途絶したら `stop` → `start` し直す（30秒クールダウン、終了イベント後はやらない）。
+  - **描画は位置の通知をきっかけに更新し、タイマーは予備にとどめる**（ロック中はタイマーが約1Hzに間引かれる。上の「スマホ画面ロック対策」の節を参照）。
+  - 古いホストへの備えとして、`startAppLocationUpdates` が `false` を返すか例外を投げたら `navigator.geolocation.watchPosition` に切り替える。ネイティブAPIだけに頼るなら `min_sdk_version` を `0.0.11` 以上にする。
+  - ストア申請では permission `location` の宣言と、その利用目的の説明が必要。
+
 ## app.json / パッケージング
 
 - 必須: `package_id`, `edition`, `name`, `version`, `min_app_version`, `entrypoint`(`index.html`)。任意: `min_sdk_version`, `permissions`, `supported_languages`。
-- **生gray4形式（0.0.12ネイティブ）を使うアプリは `min_sdk_version: "0.0.12"` にする**こと（旧ホストにraw gray4を送ると壊れた絵になるため）。依存も `"@evenrealities/even_hub_sdk": "0.0.12"` と厳密固定が安全。
+- **生gray4形式（0.0.12ネイティブ）を使うアプリは `min_sdk_version: "0.0.12"` にする**こと（旧ホストにraw gray4を送ると壊れた絵になるため）。依存も `"@evenrealities/even_hub_sdk": "0.0.12"` のように厳密固定が安全。
+- **CLI 0.1.14〜（2026-08）は `evenhub pack` 時に `min_app_version` を自動で書き込む**。npmからSDKの `minAppVersion` を取得し、`app.json` の値が低ければ引き上げる（高ければそのまま、元の `app.json` は書き換えない）。**`--sdk-ver` を付けないと最新SDKの下限（0.0.16なら2.2.10）が付く**ので、古いSDKに固定しているアプリは `--sdk-ver 0.0.12` のように実際の依存バージョンを渡すこと（でないと必要以上に古いAppのユーザーを締め出す）。下限より低い値を強制したいときは `--enforce-manual-version`。npmに届かないときはCLI同梱の対応表にフォールバックする。パック失敗時に非0で終了するようになった。
 - `package_id` は**小文字英数のみ・ハイフン不可・逆ドメイン**（例 `com.necobit.necosanpo`）。
 - 上記の通り **`version` を上げないとキャッシュで更新されない**。
 
@@ -236,14 +277,16 @@ iPhoneの画面をロックすると描画が2fps程度まで落ちる問題の�
 - 撮影スクリプト実例: `g2-next-station` リポジトリの履歴（v0.1.3）参照。
 
 - **PCシミュレータ（公式・実際に動作確認済み 2026-07-22）**: `npm install -g @evenrealities/evenhub-simulator`（0.8.0で検証）。`evenhub-simulator --automation-port 8899 "http://localhost:5173/"` でdevサーバーのアプリを直接ロード。ウィンドウにBrowser（WebView）とGlasses Displayが並ぶ。**自動化API**: `/api/ping`、`/api/screenshot/glasses`（RGBA PNG）、`/api/input`（POST、action: up/down/click/double_click）→ エージェントによる自動テストに使える。制約:
-  - **画像はPNGパスのみ**。0.0.12のraw gray4は「The image format could not be determined」で非対応（シミュレータ自体が0.0.11世代）。raw gray4アプリは `#png` のような旧形式フォールバックが必要。
+  - **画像はPNGパスのみ（0.8.0時点）**。0.0.12のraw gray4は「The image format could not be determined」で非対応（シミュレータ自体が0.0.11世代）。raw gray4アプリは `#png` のような旧形式フォールバックが必要。→ **0.9.2で解消（未検証）**、下記参照。
   - BLE制約なしなので描画は実機よりはるかに速い（fps検証には使えない）。
-  - **終了フローが未実装気味**: docsは「ダブルタップで終了ダイアログ表示」というが、0.8.0では**ダイアログが出ないまま**ページコンテナ破棄（Glasses空）＋WebViewフリーズになる。ダイアログキャンセルのバグ検証には使えない。
+  - **終了フローが未実装気味**: docsは「ダブルタップで終了ダイアログ表示」というが、0.8.0では**ダイアログが出ないまま**ページコンテナ破棄（Glasses空）＋WebViewフリーズになる。ダイアログキャンセルのバグ検証には使えない。（0.9.xで直ったかは未確認）
+  - **0.9.0〜0.9.5（2026-08〜09）の変更（公式Changelog、実機未検証）**: 0.9.0でコンテキストメニュー・長押し/離し（押しっぱなし操作とキーボードショートカット）・`textColor` の5段階表示に対応。0.9.1で自動化APIの `/api/input` に `long_press` / `long_press_release`（と `context_menu`）が追加。**0.9.2で生Gray8とpacked Gray4の画像データを受け付けるように**なった（PNGフォールバック不要になるはず）。0.9.3でエンコード画像のグレースケール変換と、画像とコンテナのサイズが違うときのcover縮小＋中央切り抜きを実機に合わせた。0.9.4でLinux/Windows ARM64ビルド（実験的）、0.9.5で高頻度なブリッジ/コンソール通信によるクラッシュを修正。輝度の段階は実機と測光的に一致しないので、見やすさは実機で確認すること。
   - コミュニティ製の [BxNxM/even-dev](https://github.com/BxNxM/even-dev) も存在（未検証）。
 
 ## 参考リンク
 
 - [Even Hub 公式ドキュメント](https://hub.evenrealities.com/docs)
+- [Even Hub Changelog（SDK/シミュレータ/CLIの版ごとの変更）](https://hub.evenrealities.com/docs/reference/changelog)
 - [Even Hub テンプレート (GitHub)](https://github.com/even-realities/evenhub-templates)
 - [SDK機能検証記事 (Zenn)](https://zenn.dev/bigdra/articles/eveng2-sdk-features)
 - [コミュニティ仕様メモ docs/ (nickustinov/even-g2-notes)](https://github.com/nickustinov/even-g2-notes) — display / error-codes / page-lifecycle / ui-patterns / packaging
