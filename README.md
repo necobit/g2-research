@@ -1,6 +1,6 @@
 # Even Realities G2 調査まとめ
 
-調査日: 2026-06-19 / 最終更新: 2026-10-20（位置情報APIのSDK 0.0.11での変化とロック中の挙動を追記）
+調査日: 2026-06-19 / 最終更新: 2026-10-20（位置情報APIのSDK 0.0.11での変化、外部BLE直接通信は不可であることを追記）
 
 ## ハードウェア仕様
 
@@ -244,6 +244,13 @@ iPhoneの画面をロックすると描画が2fps程度まで落ちる問題の�
   - **描画は位置の通知をきっかけに更新し、タイマーは予備にとどめる**（ロック中はタイマーが約1Hzに間引かれる。上の「スマホ画面ロック対策」の節を参照）。
   - 古いホストへの備えとして、`startAppLocationUpdates` が `false` を返すか例外を投げたら `navigator.geolocation.watchPosition` に切り替える。ネイティブAPIだけに頼るなら `min_sdk_version` を `0.0.11` 以上にする。
   - ストア申請では permission `location` の宣言と、その利用目的の説明が必要。
+
+## 外部BLE機器との直接通信：不可（SDK 0.0.16時点、2026-10-20確認）
+
+- **SDKにBLEのAPIは無い**。0.0.16（npm最新）の `EvenAppMethod` で呼べるのは、ユーザー/グラス情報・ホストKVストア・位置情報・アルバム/カメラ・コンテナ操作・マイク/IMU制御だけで、scan/connect/GATTに当たるものは無い。型定義中の「BLE」はグラスとの接続種別（`DeviceConnectType`）の説明だけ。グラスとのBLEはホストの仕事で、プラグインからは触れない。
+- **Web Bluetooth（`navigator.bluetooth`）も使えない**。iOSのWKWebViewはWeb Bluetoothを実装していない（WebKit一般の仕様。Even App上での実機確認はしていない）。
+- ストア掲載フォームのPermissionsに「Bluetooth」の項目はあるが、対応するSDKのAPIは見当たらず用途は不明。
+- **現状の回避策は中継**。BLE機器 → ESP32などのゲートウェイ（またはスマホアプリ）→ HTTP/WebSocket → プラグインから `fetch` / WebSocket（同一LANやサーバー経由）。将来のSDKで追加されうるので、[Even Hub Changelog](https://hub.evenrealities.com/docs/reference/changelog) を確認すること。
 
 ## app.json / パッケージング
 
